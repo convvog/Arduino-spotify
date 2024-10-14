@@ -222,7 +222,7 @@ class App:
 if __name__ == "__main__":
     # my spotify creds
     spotify_client_id = '71075034da754e17b777a73d3fef7a49'
-    spotify_client_secret = 'a693c56204f84b288b89452bea07a576'
+    spotify_client_secret = '**********288b89452bea07a576'# i dont want to leak this
     spotify_redirect_uri = 'http://localhost:8888/callback' # generric callback
     serial_port = 'COM5' # defult com port for my system
 
