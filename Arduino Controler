@@ -1,0 +1,251 @@
+#include <MCUFRIEND_kbv.h> //general pulgin for the tft lcd i got
+#include <TouchScreen.h>
+
+// Include image header files
+#include "play.c"  //play button image
+#include "lskip.c" // right arrow/skip button
+#include "rskip.c" // left arrow/ previous button
+
+MCUFRIEND_kbv tft;
+
+// Define color constants
+#define BLACK   0x0000
+#define WHITE   0xFFFF
+#define RED     0xF800
+#define GREEN   0x07E0
+#define BLUE    0x001F
+#define YELLOW  0xFFE0
+#define CYAN    0x07FF
+#define MAGENTA 0xF81F
+
+// calibration values from MCUFRIENDS calibration
+#define MINPRESSURE 200
+#define MAXPRESSURE 1000
+const int XP = 6, XM = A2, YP = A1, YM = 7;
+const int TS_LEFT = 938, TS_RT = 193, TS_TOP = 956, TS_BOT = 195;
+
+TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300); //used to denfine the points of touchscreen to prevent flipping
+
+float scale = 3.0;  //general scale value
+float textSize = 2; //general font size
+
+//temp text for on load so that the scrren doesnt look broken
+String currentSong = "";
+String track1 = "Fetching...";
+String track2 = "...";
+String album1 = "Fetching...";
+String album2 = "...";
+String artist1 = "Fetching...";
+String artist2 = "...";
+
+void drawText() {
+  // clear the area where text will be displayed
+  tft.fillRect(221, 49, 400, 180, BLACK);
+  tft.setTextColor(WHITE);
+  tft.setTextSize(textSize);
+
+  // define starting positions for text
+  int baseX = 228;
+  int baseY = 57;
+
+  // draw each line of text at specified positions
+  tft.setCursor(baseX, baseY);
+  tft.println(track1);
+  tft.setCursor(baseX, baseY + 30); 
+  tft.println(track2);
+  tft.setCursor(baseX, baseY + 60);
+  tft.println(album1);
+  tft.setCursor(baseX, baseY + 90);
+  tft.println(album2);
+  tft.setCursor(baseX, baseY + 120);
+  tft.println(artist1);
+  tft.setCursor(baseX, baseY + 150);
+  tft.println(artist2);
+}
+
+
+void drawImage(int x, int y, int w, int h, const unsigned short *image, float scale) { // use for the buttons being drawen(x,y, width, hight, encoding type, image scale) datda retraived from .c images
+//these 2 lines for making sure image is processed 1 line at a time. from left to right and top to bottem
+  for (int16_t j = 0; j < h; j++) {
+    for (int16_t i = 0; i < w; i++) {
+      
+      uint16_t color = pgm_read_word(image + j * w + i);
+      int pixelWidth = scale; //scales the image usign the constant at the start
+      int pixelHeight = scale;//scales the image usign the constant at the start
+      tft.fillRect(x + i * pixelWidth, y + j * pixelHeight, pixelWidth, pixelHeight, color); //fill each pixel on the display 1*1
+    }
+  }
+}
+
+void drawDynamicImage(int startX, int startY) {// simlar to previous but made to recive image info from the python script
+  // initialize variables for width, height, and starting coordinates
+  int width = 0;
+  int height = 0;
+
+  // wait for the width, height, and starting coordinates data from python to comfirm(initaly was going to make this changeable but did and extras remain)
+  while (Serial.available() <= 0) {
+    // waiting for serial data
+  }
+  if (Serial.available() > 0) {
+    String size = Serial.readStringUntil('\n'); //seperates the image from other info before proceusding
+    int commaIndex1 = size.indexOf(','); // read byte of data for 1 pixel of color
+    int commaIndex2 = size.indexOf(',', commaIndex1 + 1); // reads next byte of data for 1 pixel of color
+    width = size.substring(0, commaIndex1).toInt(); // seperate width data
+    height = size.substring(commaIndex1 + 1, commaIndex2).toInt(); //seperate hight data
+  }
+
+  for (int y = 0; y < height; y++) {
+    // wait for the line data
+    while (Serial.available() <= 0) {
+      // waiting for serial data
+    }
+    if (Serial.available() > 0) {// if com port has sent message
+      String lineData = Serial.readStringUntil('\n'); //seperate string of data from the rother incoming data
+      int x = 0;
+      int start = 0; // start at row 0
+      int end = lineData.indexOf(',', start); //seperate pixel by find ,
+      while (end != -1) {
+        String colorStr = lineData.substring(start, end);
+        uint16_t color = strtoul(colorStr.c_str(), NULL, 16); // make its the 16bit readable to arduino
+        tft.drawPixel(startX + x, startY + y, color);  // use starting coordinates but next line relitve to the previous one
+        x++;
+        start = end + 1;
+        end = lineData.indexOf(',', start); //finds when pixel message send so can move onto the next one
+      }
+      if (start < lineData.length()) {
+        String colorStr = lineData.substring(start);
+        uint16_t color = strtoul(colorStr.c_str(), NULL, 16);
+        tft.drawPixel(startX + x, startY + y, color);  // use starting coordinates to draw the pixel color at the corospodning point
+      }
+      // send acknowledgment
+      Serial.write('A');
+    }
+  }
+}
+bool isSongInPlaylist = false; // this will be updated based on the song status
+
+void drawAddToPlaylistButton(bool inPlaylist) { // create the button to add/remove from playlist in top right of the display
+  int buttonX = 400;
+  int buttonY = 10;
+  int buttonSize = 50;
+
+  tft.fillRect(buttonX, buttonY, buttonSize, buttonSize, inPlaylist ? GREEN : RED); // fill the button area on display to the corospoing color
+
+/*
+ if (inPlaylist) {
+    tft.setCursor(buttonX + 15, buttonY + 10);
+    tft.setTextColor(WHITE);
+    tft.setTextSize(3);
+    tft.print(""); // Display tick mark if the song is in the playlist
+  }
+was used for putting text symbol on the button to show if on or off but used color instead 
+*/
+
+}
+void setup() {  //for the stuff that need to be done when the arduino is first loaded
+  Serial.begin(115200); //faster then defual rate. just how fast the arduino i working. default is 9600
+  uint16_t ID = tft.readID(); // reads type of tft for MCUFRIEND
+  tft.begin(ID); //installise the display with line befores info
+  tft.setRotation(3); //rotate 270 degress to be landscape
+  tft.fillScreen(BLACK); // set the overide all pixels black. sets background and clears the screen
+  drawText(); // draws place holder text untill recuive proper text from python
+  drawAddToPlaylistButton(isSongInPlaylist); // create button for playlist control
+  //draws the play button
+  int playX = (tft.width() - PLAY_WIDTH * scale) / 2;
+  int playY = (tft.height() - PLAY_HEIGHT * scale) / 2;
+  drawImage(320, 230, PLAY_WIDTH, PLAY_HEIGHT, play, scale);
+  //draaws the previous button
+  int lskipX = playX - LSKIP_WIDTH * scale - 10;
+  int lskipY = playY + (PLAY_HEIGHT * scale - LSKIP_HEIGHT * scale) / 2;
+  drawImage(250, 230, LSKIP_WIDTH, LSKIP_HEIGHT, lskip, scale);
+  //draws the next button
+  int rskipX = playX + PLAY_WIDTH * scale + 10;
+  int rskipY = playY + (PLAY_HEIGHT * scale - RSKIP_HEIGHT * scale) / 2;
+  drawImage(380, 230, RSKIP_WIDTH, RSKIP_HEIGHT, rskip, scale);
+}
+// the stuff that the arduino that will loop continuosly thoughtout its operation
+void loop() {
+  // read serial data
+  if (Serial.available()) {
+    String serialData = Serial.readStringUntil('\n');//seperate the string at the desierd place
+
+    if (serialData.startsWith("progress:")) {//ensures that it olny uses the data from the percentage and only that. uses the prfix to do that
+      // handle progress update
+      serialData.remove(0, 9); // remove the "progress:" prefix
+      int progress = serialData.toInt();
+      tft.setRotation(3);
+      
+      // clear previous progress bar
+      tft.fillRect(0, 300, 480, 20, BLACK);
+      
+      // Draw new progress bar
+      int barWidth = map(progress, 0, 100, 0, 480);
+      tft.fillRect(0, 300, barWidth, 20, WHITE);
+      
+      // progress getsentage calibrated to my screen
+      tft.setCursor(450 / 2, 300);
+      tft.setTextColor(WHITE, BLACK);
+      tft.setTextSize(2);
+      tft.print(progress);
+      tft.print("%");
+    } else {
+      // handle song data and commands
+      track1 = serialData;
+      delay(100); // added delay to let data synchronize
+      track2 = Serial.readStringUntil('\n');
+      delay(100);
+      album1 = Serial.readStringUntil('\n');
+      delay(100);
+      album2 = Serial.readStringUntil('\n');
+      delay(100);
+      artist1 = Serial.readStringUntil('\n');
+      delay(100);
+      artist2 = Serial.readStringUntil('\n');
+      delay(100);
+
+      // update song text display
+      drawText();
+      
+      // add dynamic image drawing with coords
+      drawDynamicImage(7, 54);
+      
+      // check for playlist status
+      String command = Serial.readStringUntil('\n');
+
+      if (command == "in_playlist") {
+        drawAddToPlaylistButton(true);
+      } else if (command == "not_in_playlist") {
+        drawAddToPlaylistButton(false);
+      }
+    }
+  }
+
+  // handle touch input
+  TSPoint touch = ts.getPoint();
+  pinMode(YP, OUTPUT);
+  pinMode(XM, OUTPUT);
+  
+  if (touch.z > MINPRESSURE && touch.z < MAXPRESSURE) {
+    int touchX = map(touch.y, TS_LEFT, TS_RT, tft.width(), 0);
+    int touchY = map(touch.x, TS_TOP, TS_BOT, 0, tft.height());
+    if (touchX > 400 && touchX < 450 && touchY > 10 && touchY < 60) {
+      isSongInPlaylist = !isSongInPlaylist; // toggle the status
+      drawAddToPlaylistButton(isSongInPlaylist); // redraw the button
+      Serial.println(isSongInPlaylist ? "add_to_playlist" : "remove_from_playlist");
+    }
+    if (touchX > 400 && touchX < 450 && touchY > 230 && touchY < 270) {
+      Serial.println("next");
+    } else if (touchX > 260 && touchX < 300  && touchY > 230 && touchY < 270) {
+      Serial.println("previous");
+    } else if (touchX > 330 && touchX < 370 && touchY > 230 && touchY < 270) {
+      Serial.println("toggle");
+    }
+    Serial.print("Touch X: ");
+    Serial.print(touchX);
+    Serial.print(", Y: ");
+    Serial.println(touchY);
+    delay(100);
+  }
+
+  delay(100); // main loop delay for reduced cpu useage and ease of funtion
+}
